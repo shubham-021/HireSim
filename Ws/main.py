@@ -1,78 +1,112 @@
-from fastapi import FastAPI , WebSocket , WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import json
-# from text_response import generate_response
 from audio_response import generate_audio
-import base64
 from resume import define_context_with_prompt
-from text_response import prompt_text_generation , user_response_to_llm
+from text_response import prompt_text_generation, user_response_to_llm
+from services.response_service import Interviewer  # new
 
-app=FastAPI()
+app = FastAPI()
+
 
 @app.websocket("/response/audio")
-async def speech(websocket : WebSocket):
+async def speech(websocket: WebSocket):
     await websocket.accept()
     print("WebSocket connection established")
     script = None
+    interviewer = None
 
     try:
         while True:
             message = await websocket.receive()
-            # print(f"Message received: {message}")
 
             if "text" in message:
                 data = json.loads(message.get("text"))
 
-                if(data.get("type") == "Terminate"):
+                if data.get("type") == "Terminate":
                     await websocket.close()
                     break
 
-                if(data.get("type") == "init"):
-                    # print(data.get("resume"))
+                if data.get("type") == "init":
                     resume = data.get("resume")
                     try:
                         script = await define_context_with_prompt(resume=resume)
-                        # print(script)
+                        interviewer = Interviewer(script=script)
                     except Exception as e:
                         print(f"Error while generating script: {e}")
-                    await websocket.send_text(json.dumps({"type":"load_page"}))
-                
-                if(data.get("type") == "start"):
-                    if(script == None):
-                        print("Script is set null")
+                    await websocket.send_text(json.dumps({"type": "load_page"}))
+
+                if data.get("type") == "start":
+                    if script is None or interviewer is None:
+                        print("Script or interviewer is not initialized")
                         return
                     try:
                         res = await prompt_text_generation(script=script)
+                        # save Q in history
+                        interviewer.qa_history.append({"question": res, "answer": None})
                         try:
                             async for chunk in generate_audio(res):
                                 await websocket.send_bytes(chunk)
                         except Exception as e:
                             print(f"Error generating audio of type start: {e}")
                         finally:
-                            await websocket.send_text(json.dumps({"type":"audio_end", "audio":"ended"}))
+                            await websocket.send_text(
+                                json.dumps({"type": "audio_end", "audio": "ended"})
+                            )
                     except Exception as e:
-                        print(f"Some error while generating response after scripting: {e}")
+                        print(
+                            f"Some error while generating response after scripting: {e}"
+                        )
 
-                if(data.get("type") == "transcript"):
-                    print(f"User: {data.get("transcript")} \n")
+                if data.get("type") == "transcript":
+                    user_text = data.get("transcript")
+                    print(f"User: {user_text}\n")
                     try:
-                        res = await user_response_to_llm(data.get("transcript"))
-                        print(f"LLM: {res}")
-                        try:
-                            async for chunk in generate_audio(res):
-                                await websocket.send_bytes(chunk)
-                        except Exception as e:
-                            print(f"Error generating audio: {e}")
-                        finally:
-                            await websocket.send_text(json.dumps({"type":"audio_end", "audio":"ended"}))
+                        # Get interviewer + judge response
+                        reply, judge_result = await interviewer.handle_user_response(
+                            user_text
+                        )
+
+                        # update last QA entry with user's answer + assistant reply
+                        if interviewer.qa_history and interviewer.qa_history[-1][
+                            "answer"
+                        ] is None:
+                            interviewer.qa_history[-1]["answer"] = user_text
+                        interviewer.qa_history.append(
+                            {"question": reply, "answer": None}
+                        )
+
+                        if judge_result["type"] == "continue":
+                            print(f"LLM: {reply}")
+                            try:
+                                async for chunk in generate_audio(reply):
+                                    await websocket.send_bytes(chunk)
+                            except Exception as e:
+                                print(f"Error generating audio: {e}")
+                            finally:
+                                await websocket.send_text(
+                                    json.dumps({"type": "audio_end", "audio": "ended"})
+                                )
+
+                        elif judge_result["type"] == "init_review":
+                            # attach qa_history to judge result
+                            judge_result["qa_history"] = interviewer.qa_history
+                            await websocket.send_text(json.dumps({"type": "interview_end"}))
+                            await websocket.send_text(json.dumps({"type": "review", "data": judge_result}))
+                            await websocket.close()
+                            break
+
                     except Exception as e:
-                        print(f"Some error occured while passing user response and generating llm's response : {e}")
+                        print(
+                            f"Error while passing user response and generating llm's response: {e}"
+                        )
+
     except WebSocketDisconnect:
         print("Connection closed")
     except Exception as e:
         print(f"Some error occurred: {e}")
 
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app , host="0.0.0.0", port=8080)
 
-
+    uvicorn.run(app, host="0.0.0.0", port=8080)

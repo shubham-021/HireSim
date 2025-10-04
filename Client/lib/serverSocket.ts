@@ -6,6 +6,7 @@ import {
 } from './audioLogic';
 import { getGlobalMicControl } from './microphoneControl';
 import useStore from '@/store/store'
+import { reviewStore , navigateStore} from "@/store/store"
 
 interface ServerSocketPackage {
   socket: WebSocket;
@@ -92,6 +93,23 @@ const createNewServerSocket = (): Promise<ServerSocketPackage> => {
 
             if (message.type === 'audio_end' && message.audio === 'ended') {
               handleAudioEndEvent();
+              return;
+            }
+
+            if(message.type === 'interview_end'){
+              serverSocketInstance?.close();
+              navigateStore.setState({shouldNavigate: true});
+              return;
+            }
+
+            if(message.type === 'review'){
+              const reviewData = message.data;
+              reviewStore.setState({
+                score: reviewData.score,
+                remarks: reviewData.remarks,
+                review: reviewData.review,
+                qa_history: reviewData.qa_history
+              });
               return;
             }
           } catch (error) {

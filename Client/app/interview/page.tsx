@@ -7,7 +7,11 @@ import { calculateOrderedTranscript } from '@/lib/recordingLogic';
 import { cleanupAudioInput } from '@/lib/audioLogic';
 import { createMicrophoneControl, setGlobalMicControl } from '@/lib/microphoneControl';
 import useStore from '@/store/store';
+import { navigateStore } from '@/store/store';
 import { MultiStepLoader as Loader } from "@/components/ui/multi-step-loader";
+import { cn } from "@/lib/utils";
+import Link from "next/link";
+import { useRouter } from 'next/navigation';
 
 interface Transcripts {
   [key: string]: string;
@@ -38,6 +42,16 @@ export default function Interview(){
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [transcripts, setTranscripts] = useState<Transcripts>({});
   const [micReady, setMicReady] = useState<boolean>(false);
+
+  const router = useRouter();
+  const shouldNavigateTo = navigateStore(state => state.shouldNavigate);
+
+  useEffect(() => {
+    if (shouldNavigateTo) {
+      router.push('/results');
+      navigateStore.setState({shouldNavigate: false});
+    }
+  },[shouldNavigateTo])
 
   useEffect(() => {
     const start = async() => {
@@ -129,6 +143,7 @@ export default function Interview(){
 
   // Computed values
   const orderedTranscript = calculateOrderedTranscript(transcripts);
+  const isArrayTranscript = Array.isArray(orderedTranscript);
 
   if(!loaded) {
     return(
@@ -139,27 +154,94 @@ export default function Interview(){
   }
 
   return (
-    <div className='h-screen w-screen bg-black flex flex-col justify-center items-center text-white'>
-      <div>Should we start the interview ?</div>
-      <div className='flex gap-2'>
-        <button 
-          onClick={handleStartRecording} 
-          disabled={!micReady || isRecording}
-          className={`mt-2 px-4 py-1 text-white rounded-md cursor-pointer ${
-            !micReady || isRecording ? 'bg-gray-500' : 'bg-blue-500 hover:bg-blue-600'
-          }`}
-        >
-          {!micReady ? 'Setting up...' : isRecording ? 'Recording...' : 'Yes'}
-        </button>
-        <button className='mt-2 px-4 py-1 bg-blue-500 text-white rounded-md cursor-pointer hover:bg-blue-600'>
-          No
-        </button>
-      </div>
-      {!micReady && (
-        <div className='mt-4 text-sm text-gray-400'>
-          Please allow microphone access when prompted
+    <div className={cn('min-h-dvh flex flex-col') }>
+      <main className={cn('flex-1 pt-16') }>
+        <section className={cn('border-b bg-gradient-to-b from-primary/10 to-transparent') }>
+          <div className={cn('mx-auto max-w-6xl px-4 md:px-6 py-8 md:py-10') }>
+            <h1 className={cn('text-2xl md:text-3xl font-semibold tracking-tight') }>Live interview</h1>
+            <p className={cn('mt-1 text-sm text-muted-foreground max-w-2xl') }>Answer in real time. Your transcript and AI responses appear side by side.</p>
+          </div>
+        </section>
+        <div className={cn('mx-auto max-w-6xl px-4 md:px-6 py-8 grid lg:grid-cols-3 gap-6') }>
+          <div className={cn('lg:col-span-2 rounded-2xl border bg-card text-card-foreground shadow p-6') }>
+            <div className={cn('flex items-center justify-between gap-4') }>
+              <h1 className={cn('text-xl md:text-2xl font-semibold') }>Interview</h1>
+              <div className={cn('text-xs text-muted-foreground') }>{isRecording ? 'Recording...' : micReady ? 'Ready' : 'Initializing...'}</div>
+            </div>
+            <div className={cn('mt-4 flex items-center gap-3') }>
+              <button 
+                onClick={handleStartRecording} 
+                disabled={!micReady || isRecording}
+                className={cn('inline-flex items-center justify-center rounded-md text-sm font-medium', !micReady || isRecording ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary text-primary-foreground hover:opacity-90', 'px-4 py-2')}
+              >
+                {!micReady ? 'Setting up...' : isRecording ? 'Recording...' : 'Start'}
+              </button>
+              <button 
+                onClick={handleStopRecording}
+                className={cn('inline-flex items-center justify-center rounded-md text-sm font-medium bg-destructive text-white hover:opacity-90', 'px-4 py-2')}
+              >
+                Stop
+              </button>
+              <Link href="/results" className={cn('inline-flex items-center justify-center rounded-md text-sm font-medium border hover:bg-accent', 'px-4 py-2') }>
+                View results
+              </Link>
+            </div>
+            {isArrayTranscript ? (
+              <div className={cn('mt-6 grid md:grid-cols-2 gap-4') }>
+                <div className={cn('h-64 md:h-80 rounded-lg border bg-muted/30 p-4 overflow-auto text-sm') }>
+                  <div className={cn('text-muted-foreground') }>You</div>
+                  <div className={cn('mt-3 space-y-2') }>
+                    {(orderedTranscript as any[]).filter((t: any) => t.role === 'user').map((entry: any, idx: number) => (
+                      <div key={idx} className={cn('flex items-start gap-2') }>
+                        <span className={cn('shrink-0 rounded-md px-2 py-0.5 text-[10px] font-medium bg-primary text-primary-foreground') }>
+                          You
+                        </span>
+                        <p className={cn('leading-relaxed') }>{entry.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className={cn('h-64 md:h-80 rounded-lg border bg-muted/30 p-4 overflow-auto text-sm') }>
+                  <div className={cn('text-muted-foreground') }>AI</div>
+                  <div className={cn('mt-3 space-y-2') }>
+                    {(orderedTranscript as any[]).filter((t: any) => t.role !== 'user').map((entry: any, idx: number) => (
+                      <div key={idx} className={cn('flex items-start gap-2') }>
+                        <span className={cn('shrink-0 rounded-md px-2 py-0.5 text-[10px] font-medium bg-accent text-foreground') }>
+                          AI
+                        </span>
+                        <p className={cn('leading-relaxed') }>{entry.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className={cn('mt-6') }>
+                <div className={cn('h-64 md:h-80 rounded-lg border bg-muted/30 p-4 overflow-auto text-sm') }>
+                  <div className={cn('text-muted-foreground') }>Transcript</div>
+                  <p className={cn('mt-3 leading-relaxed whitespace-pre-wrap') }>{orderedTranscript as unknown as string}</p>
+                </div>
+              </div>
+            )}
+          </div>
+          <aside className={cn('lg:col-span-1 space-y-6') }>
+            <div className={cn('rounded-2xl border bg-card text-card-foreground shadow p-6') }>
+              <h2 className={cn('font-medium') }>Tips</h2>
+              <ul className={cn('mt-3 text-sm list-disc pl-5 space-y-1 text-muted-foreground') }>
+                <li>Speak clearly and at a steady pace.</li>
+                <li>Answer concisely and structure your points.</li>
+                <li>Pause briefly to think before answering.</li>
+              </ul>
+            </div>
+            <div className={cn('rounded-2xl border bg-card text-card-foreground shadow p-6') }>
+              <h2 className={cn('font-medium') }>Session</h2>
+              <div className={cn('mt-2 text-sm text-muted-foreground') }>
+                Status: {isRecording ? 'Recording' : micReady ? 'Ready' : 'Initializing'}
+              </div>
+            </div>
+          </aside>
         </div>
-      )}
+      </main>
     </div>
   );
 }

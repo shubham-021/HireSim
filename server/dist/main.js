@@ -21,13 +21,18 @@ const express_2 = require("@clerk/express");
 const prisma_1 = require("../src/generated/prisma");
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
+app.use((0, express_2.clerkMiddleware)());
 const db = new prisma_1.PrismaClient();
 const upload = (0, multer_1.default)();
+// function printMiddle(req:Request , res:Response , next: NextFunction){
+//     console.log("here");
+//     next();
+// }
 app.post("/api/upload/resume", (0, express_2.requireAuth)(), upload.single('file'), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
     try {
         const { userId } = (0, express_2.getAuth)(req);
-        // console.log(userId)
+        // console.log(userId) 
         if (userId) {
             const user = yield express_2.clerkClient.users.getUser(userId);
             // console.log(user)
@@ -79,6 +84,8 @@ app.post("/api/upload/resume", (0, express_2.requireAuth)(), upload.single('file
         // console.log(text)
         const user = yield express_2.clerkClient.users.getUser(userId);
         const user_id = user.privateMetadata.dbUserId;
+        console.log(user_id);
+        console.log(text);
         const id = yield db.resume.create({
             data: {
                 userId: user_id,
@@ -91,6 +98,7 @@ app.post("/api/upload/resume", (0, express_2.requireAuth)(), upload.single('file
         res.status(200).json({ "success": "file uploaded ob db", "id": id });
     }
     catch (error) {
+        console.log(error);
         res.status(400).json({ "error": "Uploading Failed" });
     }
 }));

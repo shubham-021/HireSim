@@ -1,21 +1,33 @@
 import 'dotenv/config'
-import express from "express";
+import express, { NextFunction, Request, Response } from "express";
 import cors from 'cors'
 import multer from "multer";
 import PdfParse from "pdf-parse";
-import { clerkClient, requireAuth, getAuth } from '@clerk/express'
+import { clerkClient, requireAuth, getAuth, clerkMiddleware } from '@clerk/express'
 import { PrismaClient } from "../src/generated/prisma";
+
+type middlewareParam = {
+    req : Request,
+    res : Response,
+    next : NextFunction
+}
 
 const app = express();
 app.use(cors())
+app.use(clerkMiddleware());
 const db = new PrismaClient()
 
 const upload = multer()
 
-app.post("/api/upload/resume", requireAuth(), upload.single('file'), async(req,res)=>{
+// function printMiddle(req:Request , res:Response , next: NextFunction){
+//     console.log("here");
+//     next();
+// }
+
+app.post("/api/upload/resume" ,  requireAuth(), upload.single('file'), async(req,res)=>{
     try {
         const { userId } = getAuth(req)
-        // console.log(userId)
+        // console.log(userId) 
         if(userId){
             const user = await clerkClient.users.getUser(userId)
             // console.log(user)
@@ -71,6 +83,8 @@ app.post("/api/upload/resume", requireAuth(), upload.single('file'), async(req,r
         // console.log(text)
         const user = await clerkClient.users.getUser(userId as string)
         const user_id = user.privateMetadata.dbUserId as string
+        console.log(user_id);
+        console.log(text);
         const id = await db.resume.create({
             data:{
                 userId: user_id,
@@ -83,6 +97,7 @@ app.post("/api/upload/resume", requireAuth(), upload.single('file'), async(req,r
 
         res.status(200).json({"success" : "file uploaded ob db" , "id":id})
     } catch (error) {
+        console.log(error);
         res.status(400).json({"error":"Uploading Failed"})
     }
 })
